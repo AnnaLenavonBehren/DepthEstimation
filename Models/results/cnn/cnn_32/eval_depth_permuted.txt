@@ -1,0 +1,11 @@
+MSE:  13.659707
+RMSE:  3.695904
+MAE:  2.3380008
+ME:  0.1333742
+R2:  -0.9353764300791962
+MSE diopters:  0.7518184
+RMSE diopters:  0.8670746
+MAE diopters:  0.6427319
+ME diopters:  -0.16961811
+Percent below 0.125 diopters:  16.07505239695266
+Percent below 0.01 m:  1.0213247280348647
