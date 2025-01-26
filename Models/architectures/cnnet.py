@@ -25,7 +25,7 @@ class CNNET(nn.Module):
         self.activation = activation
 
         if isinstance(activation, nn.ReLU):
-            nn.init.kaiming_normal_(self.conv1.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv1.weight, nonlinearity='relu') 
             nn.init.kaiming_normal_(self.conv2.weight, nonlinearity='relu')
             nn.init.kaiming_normal_(self.conv3.weight, nonlinearity='relu')
             nn.init.kaiming_normal_(self.conv4.weight, nonlinearity='relu')

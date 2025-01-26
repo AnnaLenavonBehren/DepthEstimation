@@ -1,6 +1,6 @@
 # Depth Estimation
 
-This project includes the implementation of different approaches to 3D gaze depth estimation:  
+This project includes the implementation of different approaches to 3D gaze distance estimation:  
 
 ### Center and Vergence
 
@@ -17,7 +17,7 @@ This notebook implements a Support Vector Regression with radial basis functions
 The following models are part of a larger Python project ([Models/](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models)), that tests an MLP and various different CNN architectures with different training data and parameters. It also has the option of testing the performance when the features are permuted.  
 The options for training can be set in the main file; feature permutation requires changing the eye-tracking file in the corresponding data file ([Models/data/](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/data)).  
 
-For already trained models, the [TensorFlow runs](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/runs), the [weights](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/saved_models) and the [resulting predictions](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/results) are available.
+For already trained models, the [weights](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/saved_models) and the [resulting predictions](https://github.com/AnnaLenavonBehren/DepthEstimation/tree/976d27277c6ec829c67aed71650ee333602d63db/Models/results) are available.
 
 
 Running the project requires the raw depth and eye-tracking data collected within the Eye-tracking Study. The data is not uploaded but can be made available upon request.

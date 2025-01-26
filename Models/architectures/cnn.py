@@ -3,7 +3,7 @@ import torch.nn as nn
 max = 20
 
 class CNN(nn.Module):
-    def __init__(self):
+    def __init__(self, activation=nn.ReLU()):
         super(CNN, self).__init__()
 
         # Convolutional layer 1
@@ -19,8 +19,33 @@ class CNN(nn.Module):
         self.fc3 = nn.Linear(128, 64)
         self.fc4 = nn.Linear(64, 1)
 
-        # test:
-        # padding 0
+        self.activation = activation
+
+        if isinstance(activation, nn.ReLU):
+            nn.init.kaiming_normal_(self.conv1.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv2.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv3.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv4.weight, nonlinearity='relu')
+
+            nn.init.kaiming_normal_(self.fc1.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc2.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc3.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc4.weight, nonlinearity='relu')
+
+            print('Weights initialized with He initialization.')
+
+        elif isinstance(activation, nn.Tanh):
+            nn.init.xavier_normal_(self.conv1.weight)
+            nn.init.xavier_normal_(self.conv2.weight)
+            nn.init.xavier_normal_(self.conv3.weight)
+            nn.init.xavier_normal_(self.conv4.weight)
+
+            nn.init.xavier_normal_(self.fc1.weight)
+            nn.init.xavier_normal_(self.fc2.weight)
+            nn.init.xavier_normal_(self.fc3.weight)
+            nn.init.xavier_normal_(self.fc4.weight)
+
+            print('Weights initialized with Xavier initialization.')
 
     
     def forward(self, x):
@@ -299,7 +324,7 @@ def find_nearest(tensor, value):
 
 
 class CNNClassifierDiopters(nn.Module):
-    def __init__(self):
+    def __init__(self, activation=nn.ReLU()):
         super(CNNClassifierDiopters, self).__init__()
 
         # Convolutional layer 1
@@ -314,6 +339,34 @@ class CNNClassifierDiopters(nn.Module):
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 64)
         self.fc4 = nn.Linear(64, 1)
+
+        self.activation = activation
+
+        if isinstance(activation, nn.ReLU):
+            nn.init.kaiming_normal_(self.conv1.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv2.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv3.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.conv4.weight, nonlinearity='relu')
+
+            nn.init.kaiming_normal_(self.fc1.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc2.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc3.weight, nonlinearity='relu')
+            nn.init.kaiming_normal_(self.fc4.weight, nonlinearity='relu')
+
+            print('Weights initialized with He initialization.')
+
+        elif isinstance(activation, nn.Tanh):
+            nn.init.xavier_normal_(self.conv1.weight)
+            nn.init.xavier_normal_(self.conv2.weight)
+            nn.init.xavier_normal_(self.conv3.weight)
+            nn.init.xavier_normal_(self.conv4.weight)
+
+            nn.init.xavier_normal_(self.fc1.weight)
+            nn.init.xavier_normal_(self.fc2.weight)
+            nn.init.xavier_normal_(self.fc3.weight)
+            nn.init.xavier_normal_(self.fc4.weight)
+
+            print('Weights initialized with Xavier initialization.')
     
     def forward(self, x):
 

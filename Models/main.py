@@ -1,269 +1,212 @@
 import torch
-from torch.utils.data import DataLoader, TensorDataset, Dataset, Subset
+from torch.utils.data import DataLoader, Subset
 from training import Trainer
-from data.data_mlp import DataMLP
 from data.data_cnn import DataCNN, ETData
 from data.data_cnn_diopters import DataCNNDiopters
+from data.data_cnn_etdata_diopters import DataCNNETDiopters
 from data.data_cnn_etdata import DataCNNET
 from evaluation import EvaluateModel as eval
-import torch.nn as nn
-import matplotlib.pyplot as plt
-from enum import Enum
+
 import os
 import numpy as np
 
-# Hyperparameter
 
-batch_size = 64
+#---------------------------------#
+# Adjust according to your needs  #
+#---------------------------------#
+
+# Hyperparameters for training
+
+batch_size = 1 #64
 num_workers = 12
 num_epochs = 100
+lr = 1e-3
 
-model_nr = 500
+# Architecture of the model with the name [model_type]_[model_id]_[model_counter] eg. cnnet_100_0
+
+train = True                            # True if model should be trained, only tested otherwise
+model_type = 'cnnet'                    # available model types: cnn, cnnclassifier, cnnet, cnnetcov, cnndiopters, cnnclassifierdiopters, cnnetdiopters, cnnetconvdiopters
+model_id = 400                          # save/load model with this number
+model_counter = 1
 
 
+#---------------------------------#
 
-# do not adjust these parameters
 
+# Option to test the model's performance with only one participant
+test_only_one_subj = False              # true, if model should be tested only on one subject, trained on the others
+id = 3                                  # ids currently range from 3 to 43
+
+# Learning rate optimization
+lr_optimization = False                 # True if learning rate optimization should be performed
+lrs = [1e-3, 1e-4, 1e-5, 1e-6]          # learning rates for the learning rate optimization
+
+# feature permutation
+feature_permutation = ETData.NONE     # for feature permutation: select from ETData.ET, ECCENTRICITY, VERGENCE, IPD, DEPTH
+nr_permutations = 20                    # number of permutations for feature permutation
+
+#---------------------------------#
+# Do not change below this line   #
+#---------------------------------#
+ 
+seed = 42
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-#lrs = [10**-1, 10**-2, 10**-3, 10**-4, 10**-5, 10**-6]
-#model_types = ['largecnnclassifier', 'cnnclassifier', 'cnn', 'largecnn', 'tinycnn', 'smallcnn']
-
-# add all learning rates and model types you want to test, choose activation function
-lrs = [10**-3]
-model_types = ['cnnclassifier']
-activation = nn.ReLU() # nn.Tanh()
-
-
-# set to False if you only want to evaluate a model
-train = True
-
-# set to True if you only want to test the performance on one subject
-test_only_one_subj = False
-
-
-# train or only evaluate model
-
-
-# if train == False, assign model_type
-#filename = 'cnn_32.pt'
-feature_permutation = ETData.NONE
-nr_permutations = 20
-
-
-
 if feature_permutation != ETData.NONE:
     train = False
 
-
-perm_acc = 0
-acc_id = 0
-
 def __main__():
-    global filename, feature_permutation, perm_acc
-    print('Using device:', device)
-    num_cores = os.cpu_count()
-    print('Number of CPU cores:', num_cores)
-    # Initialize data and model
 
-    # hyperparameter search
-    v_losses = []
-    for lr in lrs:
-        for model_type in model_types:
-            filename = model_type + '_' + str(model_nr) + '.pt'
+    for id in range(30, 44):
+        for seed in range(nr_permutations):
+            if feature_permutation == ETData.NONE:
+                seed = 42
 
-            for id in range(30, 44):
-                acc_id = id
-                for nr in range(nr_permutations):
-                    perm_acc = nr
+            # define dataset depending on model type
+            print('Seed:', seed)
+            train_loader, val_loader, test_loader = initialize_dataset(model_type, test_only_one_subj=test_only_one_subj, id=id , feature_permutation=feature_permutation, seed=seed)
 
-                    if model_type == 'mlp':
-                        print('Using MLP model.')
+            # initialize model
+            model = Trainer(model_type, train_loader, val_loader)
 
-                        data = DataMLP(test_only_one_subj=test_only_one_subj, subj_id=id)
-                        model = Trainer(model_type)
-                        total_params = sum(p.numel() for p in model.model.parameters())
-                        print(f"Number of parameters: {total_params}")
-                        
-                        # set model parameters
-                        model.optimizer = torch.optim.Adam(model.model.parameters(), lr=lr)
-                        #model.optimizer = torch.optim.SGD(model.model.parameters(), lr=lr, momentum=0.9)
-                        model.loss_fn = nn.MSELoss()
 
-                        # define data loader
-                        train_loader = DataLoader(TensorDataset(data.X_train, data.y_train), num_workers=num_workers, batch_size=batch_size, shuffle=True, persistent_workers=True)
-                        val_loader = DataLoader(TensorDataset(data.X_val, data.y_val), num_workers=num_workers, batch_size=batch_size, shuffle=False, persistent_workers=True)
-                        test_loader = DataLoader(TensorDataset(data.X_test, data.y_test), num_workers=num_workers, batch_size=batch_size, shuffle=False, persistent_workers=True)
+            if train:
+                if lr_optimization:
+                    losses, vlosses, best_val_loss, best_lr = model.lr_optimization(lrs, nr_epochs=num_epochs, batch_size=batch_size)
+                    print('Learning rate optimization done.')
+                    print('Best learning rate: ', best_lr)
 
-                    elif model_type == 'cnn' or model_type == 'tinycnn' or model_type == 'smallcnn' or model_type == 'largecnn' or model_type == 'cnnclassifier' or model_type == 'largecnnclassifier' or model_type == 'cnnclassifierdiopters':
-                        print('Using CNN model.')
+                else:
+                    losses, vlosses, best_val_loss = model.train(lr=lr, nr_epochs=num_epochs, batch_size=batch_size)
+                    print('Training done.')
+                
+                print('Best validation loss: ', best_val_loss)
+                
+                filepath_results, filepath_model, filepath_runs = initialize_filenames(model_type, feature_permutation=feature_permutation, train=train, model_id=model_id, test_only_one_subj=test_only_one_subj, id=id, model_counter=model_counter)
 
-                        data = DataCNN(test_only_one_subj=test_only_one_subj, subj_id=id, permutation=feature_permutation, seed=nr)
-                        ds = data.ds
-                        train_indices = data.train_indices
-                        val_indices = data.val_indices
-                        test_indices = data.test_indices
+                model.save_model(filepath_model)
+                np.save(filepath_results + '/losses.npy', np.array(losses))
+                np.save(filepath_results + '/vlosses.npy', np.array(vlosses))
 
-                        model = Trainer(model_type)
-                        # get number of parameters
-                        total_params = sum(p.numel() for p in model.model.parameters())
-                        print(f"Number of parameters: {total_params}")
-                        # set model parameters
-                        model.optimizer = torch.optim.Adam(model.model.parameters(), lr=lr)
-                        #model.optimizer = torch.optim.SGD(model.model.parameters(), lr=lr, momentum=0.9)
-                        model.loss_fn = nn.MSELoss()
+            else:
+                filepath_results, filepath_model, filepath_runs = initialize_filenames(model_type, feature_permutation=feature_permutation, train=train, model_id=model_id, test_only_one_subj=test_only_one_subj, id=id, model_counter=model_counter)
+                model.load_model(filepath_model)
 
-                        # create dataloaders
-                        train_loader = DataLoader(Subset(ds, train_indices), batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-                        val_loader = DataLoader(Subset(ds, val_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-                        test_loader = DataLoader(Subset(ds, test_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-                    
-                    elif model_type == 'cnnclassifierdiopters':
-                        print('Using CNN model training on diopters.')
+                if model is None:
+                    print('Model not found.')
+                    return
+                else:
+                    print('Model loaded successfully.')
+            
+            y_test, y_pred = eval.test_model(model, test_loader)
+            np.save(filepath_results + '/y_test.npy', y_test)
+            np.save(filepath_results + '/y_pred.npy', y_pred)
 
-                        data = DataCNNDiopters()
-                        ds = data.ds
-                        train_indices = data.train_indices
-                        val_indices = data.val_indices
-                        test_indices = data.test_indices
-
-                        model = Trainer(model_type)
-                        # get number of parameters
-                        total_params = sum(p.numel() for p in model.model.parameters())
-                        print(f"Number of parameters: {total_params}")
-                        # set model parameters
-                        model.optimizer = torch.optim.Adam(model.model.parameters(), lr=lr)
-                        #model.optimizer = torch.optim.SGD(model.model.parameters(), lr=lr, momentum=0.9)
-                        model.loss_fn = nn.MSELoss()
-
-                        # create dataloaders
-                        train_loader = DataLoader(Subset(ds, train_indices), batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-                        val_loader = DataLoader(Subset(ds, val_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-                        test_loader = DataLoader(Subset(ds, test_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-
-                    elif model_type == 'cnnet' or model_type == 'cnnetconv':
-                        print('Using CNN ET model.')
-
-                        data = DataCNNET(test_only_one_subj=test_only_one_subj, subj_id=id)
-                        ds = data.ds
-                        train_indices = data.train_indices
-                        val_indices = data.val_indices
-                        test_indices = data.test_indices
-
-                        model = Trainer(model_type, activation=activation)
-                        # get number of parameters
-                        total_params = sum(p.numel() for p in model.model.parameters())
-                        print(f"Number of parameters: {total_params}")
-                        # set model parameters
-
-                        model.optimizer = torch.optim.Adam(model.model.parameters(), lr=lr)
-                        model.loss_fn = nn.MSELoss()
-
-                        # create dataloaders
-                        train_loader = DataLoader(Subset(ds, train_indices), batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-                        val_loader = DataLoader(Subset(ds, val_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-                        test_loader = DataLoader(Subset(ds, test_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-                    
-                    else:
-                        print('Model type not supported. Use MLP or CNN.')
-                        return
-                    
-                    # train model and/or evaluate it
-                    if train:
-                        v_losses.append(training(model, train_loader, val_loader, test_loader, model_type, filename, id))
-                    else:
-                        evaluation_only(test_loader)
-                    
-                    if feature_permutation == ETData.NONE:
-                        break
-
-                if not test_only_one_subj:
-                    break
+            print('Results saved to: ', filepath_results)
+        
+            if feature_permutation == ETData.NONE:
+                break
+            
+        if not test_only_one_subj:
+            break
     
-    print('Finished hyperparameter search.')
-    #print('Best validation loss: ', min(v_losses), ' with learning rate: ', lrs[v_losses.index(min(v_losses))])
 
 
-def training(model, train_loader, val_loader, test_loader, model_type, filename, acc_id):
-
-    # if file already exists increase model_nr, without overwriting existing models
-    while os.path.exists('saved_models/' + model_type + '/' + filename):
-        global model_nr
-        model_nr += 1
-        #filename = model_type + '_' + str(model_nr) + '.pt'
-        if test_only_one_subj:
-            filename = model_type + '_subj_' + str(acc_id) + '_' + str(model_nr) + '.pt'
+def initialize_dataset(model_type, test_only_one_subj=False, id=3 , feature_permutation=ETData.NONE, seed=42):
+        
+        if model_type == 'cnn' or model_type == 'cnnclassifier':
+            print('Model initialized with CNN model. Training on meters.')
+            data = DataCNN(test_only_one_subj=test_only_one_subj, subj_id=id, permutation=feature_permutation, seed=seed)
+            
+        elif model_type == 'cnndiopters' or model_type == 'cnnclassifierdiopters':
+            print('Model initialized with CNN model. Training on diopters.')
+            data = DataCNNDiopters(test_only_one_subj=test_only_one_subj, subj_id=id, permutation=feature_permutation, seed=seed)
+        
+        elif model_type == 'cnnet' or model_type == 'cnnetconv':
+            print('Model initialized with CNNET model. Training on meters.')
+            data = DataCNNET(test_only_one_subj=test_only_one_subj, subj_id=id, permutation=feature_permutation, seed=seed)
+        
+        elif model_type == 'cnnetdiopters' or model_type == 'cnnetconvdiopters':
+            print('Model initialized with CNNET model. Training on diopters.')
+            data = DataCNNETDiopters(test_only_one_subj=test_only_one_subj, subj_id=id, permutation=feature_permutation, seed=seed)
+        
         else:
-            filename = model_type + '_' + str(model_nr) + '.pt'
+            raise ValueError('Model type not supported.')
+        
+        ds = data.ds
+        train_indices = data.train_indices
+        val_indices = data.val_indices
+        test_indices = data.test_indices
+        
+        train_loader = DataLoader(Subset(ds, train_indices), batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+        val_loader = DataLoader(Subset(ds, val_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+        test_loader = DataLoader(Subset(ds, test_indices), batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+        
+        return train_loader, val_loader, test_loader
 
-    filepath = 'saved_models/' + model_type + '/'
+def initialize_filenames(model_type, feature_permutation=ETData.NONE, train=True, model_id=100, test_only_one_subj=test_only_one_subj, id=id, model_counter=0):
 
-    if not os.path.exists(filepath):
-        os.makedirs(filepath)
-    # train model
-    losses, vlosses, best_val_loss = model.train(train_loader, val_loader, n_epochs=num_epochs, filename=filename)
-    model.save_model(filepath + filename)
-    print('Model saved as:', filename)
-    
-    # evaluate model
-    y_test, y_pred = eval.evaluate_model(model, test_loader)
+    perm_counter = 0
 
-    #eval.plot_losses(losses, vlosses)
-    #eval.plot_predictions(y_test, y_pred)
+    filename = model_type + '_' + str(model_id) + '_' + str(model_counter)
 
-    # save y_test, y_pred and losses
-    # create directory if it does not exist
-    if test_only_one_subj:
-        filepath = 'results/' + model_type + '/' + model_type + '_subj_' + str(acc_id) + '_' + str(model_nr) 
+    filepath_results, filepath_model, filepath_runs = get_filepaths(model_type, filename)
+
+    if train:
+        while os.path.exists(filepath_results):
+
+            print('Model already exists. Renaming model.')
+
+            model_counter += 1
+            filename = model_type + '_' + str(model_id) + '_' + str(model_counter)
+            filepath_results, filepath_model, filepath_runs = get_filepaths(model_type, filename, test_only_one_subj=test_only_one_subj, id=id)
+
     else:
-        filepath = 'results/' + model_type + '/' + model_type + '_' + str(model_nr)
-
-    if not os.path.exists(filepath):
-        os.makedirs(filepath)
-
-    np.save(filepath + '/losses.npy', np.array(losses))
-    np.save(filepath + '/vlosses.npy', np.array(vlosses))
-    np.save(filepath + '/y_test.npy', y_test)
-    np.save(filepath + '/y_pred.npy', y_pred)
-
-    #plt.show()
-    #input()
-
-    return best_val_loss
-
-def evaluation_only(test_loader):
-    global model_type, filename, perm_acc
-
-    model_trainer = Trainer(model_type)
-    model = model_trainer.model
-    model = model_trainer.load_model('saved_models/' + model_type + '/' + filename)
-
-    if model is None:
-        print('Model not found.')
-        return
-    else:
-        print('Model loaded successfully.')
-        y_test, y_pred = eval.evaluate_model(model_trainer, test_loader)
 
         if feature_permutation != ETData.NONE:
+
             if feature_permutation == ETData.ECCENTRICITY:
                 perm_type = 'eccentricity'
             elif feature_permutation == ETData.VERGENCE:
                 perm_type = 'vergence'
             elif feature_permutation == ETData.DEPTH:
                 perm_type = 'depth'
-
-            model_name = filename.split('.')[0]
-            filepath = 'results/' + model_type + '/' + model_name + '_' + perm_type + '_' + str(perm_acc)
-            if not os.path.exists(filepath):
-                os.makedirs(filepath)
-
-            np.save(filepath + '/y_test.npy', y_test)
-            np.save(filepath + '/y_pred.npy', y_pred)
+            elif feature_permutation == ETData.ET:
+                perm_type = 'et'
+            elif feature_permutation == ETData.IPD:
+                perm_type = 'ipd'
         
-            print('Evaluation successful. Results saved in:', filepath)
-        else:
-            print('Evaluation successful.')
+            name_fp = model_type + '_' + perm_type + '_' + str(perm_counter)
+            filename_fp = name_fp + '_' + str(model_id) + '_' + str(model_counter)
+
+            filepath_results, _, filepath_runs = get_filepaths(model_type, filename_fp, test_only_one_subj=test_only_one_subj, id=id)
+
+            while os.path.exists(filepath_results):
+                perm_counter += 1
+
+                print('Results already exist. Renaming folders for saving feature permutation results.')
+                name_fp = model_type + '_' + perm_type + '_' + str(perm_counter)
+                filename_fp = name_fp + '_' + str(model_id) + '_' + str(model_counter)
+                    
+                filepath_results, _, filepath_runs = get_filepaths(model_type, filename_fp, test_only_one_subj=test_only_one_subj, id=id)
+    
+    if not os.path.exists(filepath_results):
+        os.makedirs(filepath_results)
+        #os.makedirs(filepath_model)
+        os.makedirs(filepath_runs)
+
+    return filepath_results, filepath_model, filepath_runs
+        
+
+def get_filepaths(model_type, filename, test_only_one_subj=False, id=3):
+
+    if test_only_one_subj:
+        filename += '_subj_' + str(id)
+
+    filepath_results = 'results/' + model_type + '/' + filename
+    filepath_model = 'saved_models/' + model_type + '/' + filename + '.pt'
+    filepath_runs = 'runs/' + model_type + '/' + filename
+
+    return filepath_results, filepath_model, filepath_runs
 
 
 if __name__ == "__main__":

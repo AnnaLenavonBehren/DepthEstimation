@@ -9,10 +9,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, Subset
 from scripts import utils, params
 import mmap
-
+from data.data_cnn import ETData
 
 class CNNDatasetET(Dataset):
-    def __init__(self, et_data: pd.DataFrame, depth_path_indoor: str, depth_path_outdoor: str):
+    def __init__(self, et_data: pd.DataFrame, depth_path_indoor: str, depth_path_outdoor: str, permutation=ETData.NONE, seed=42):
         self.et_data = et_data
         self.depth_path_indoor = depth_path_indoor
         self.depth_path_outdoor = depth_path_outdoor
@@ -20,6 +20,23 @@ class CNNDatasetET(Dataset):
         size_of_float32 = 4
         self.frame_size = params.kernel_height * params.kernel_height * size_of_float32
         self.bytes_to_read = self.frame_size
+
+        # create permutation
+        if permutation == ETData.ECCENTRICITY:
+            print('Eccentricity not used here, nothing permuted.')
+        elif permutation == ETData.VERGENCE:
+            print('Vergence not used here, nothing permuted.')
+        elif permutation == ETData.DEPTH:
+            depth = np.random.permutation(self.et_data[['scene_id', 'participant_id', 'frame_number']].to_numpy())
+            self.et_data[['scene_id', 'participant_id', 'frame_number']] = depth
+            print('Depth maps permuted.')
+        elif permutation == ETData.ET:
+            et = np.random.permutation(self.et_data[['l_gaze.x', 'l_gaze.y', 'r_gaze.x', 'r_gaze.y']].to_numpy())
+            self.et_data[['l_gaze.x', 'l_gaze.y', 'r_gaze.x', 'r_gaze.y']] = et
+            print('Eye-tracking data permuted.')
+        elif permutation == ETData.IPD:
+            self.et_data['ipd'] = np.random.permutation(self.et_data['ipd'].to_numpy())
+            print('IPD permuted.')
         
 
     def __len__(self):
@@ -99,14 +116,14 @@ class CNNDatasetET(Dataset):
         return scene_id, participant_id, frame_number
 
 class DataCNNET:
-    def __init__(self, test_only_one_subj=False, subj_id=3):
-        self.ds, self.train_indices, self.val_indices, self.test_indices = self.init_dataset(test_only_one_subj, subj_id)
+    def __init__(self, test_only_one_subj=False, subj_id=3, permutation=ETData.NONE, seed=42):
+        self.ds, self.train_indices, self.val_indices, self.test_indices = self.init_dataset(test_only_one_subj, subj_id, permutation=permutation, seed=seed)
 
     
-    def init_dataset(self, test_only_one_subj, subj_id):
+    def init_dataset(self, test_only_one_subj, subj_id, permutation, seed):
         current_path = os.getcwd()
 
-        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_cnn_var_rollingmedian.feather'))
+        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_cnn_rollingmedian.feather'))# 'et_data_artificial.feather')) #'et_data_cnn_var.feather')) #_rollingmedian.feather'))
         data = pd.read_feather(path)
 
         # depth-data
@@ -118,12 +135,12 @@ class DataCNNET:
         #distance_outdoor_files = [f for f in os.listdir(distance_outdoor_path) if os.path.isfile(os.path.join(distance_outdoor_path, f))]
 
         # instantiate the dataset
-        ds = CNNDatasetET(data, distance_indoor_path, distance_outdoor_path)
+        ds = CNNDatasetET(data, distance_indoor_path, distance_outdoor_path, permutation, seed)
 
         # auf 30 subjects ods cross validation -> test auf den 11 mit den parametern
 
         subjs = range(3, 44)
-        np.random.seed(42)
+        np.random.seed(seed)
 
 
         if test_only_one_subj:

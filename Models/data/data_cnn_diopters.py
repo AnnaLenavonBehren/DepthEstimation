@@ -48,17 +48,23 @@ class CNNDatasetDiopters(Dataset):
                 frame_data_np = np.frombuffer(data, dtype=np.float32).reshape(params.kernel_height, params.kernel_height)
                 depthmap = torch.tensor(frame_data_np, dtype=torch.float32)
 
+
         # get eccentricity and vergence
         ecc = self.et_data.loc[idx, 'eccentricity']
         vergence = self.et_data.loc[idx, 'vergence']
         target_distance = self.et_data.loc[idx, 'distance']
 
         label = torch.tensor([target_distance], dtype=torch.float32)
+        print(1 / label)
 
         # denormalize
         vergence = vergence * max
         depthmap = depthmap * max
         label = label * max
+
+        # to torch
+        ecc = torch.tensor(ecc, dtype=torch.float32)
+        vergence = torch.tensor(vergence, dtype=torch.float32)
 
         # clip to 0.1, max
         vergence = torch.clamp(vergence, 0.1, max)
@@ -123,18 +129,12 @@ class DataCNNDiopters:
     def init_dataset(self):
         current_path = os.getcwd()
 
-        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_cnn.feather'))
+        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_cnn_rollingmedian.feather'))#et_data_cnn.feather'))
         data = pd.read_feather(path)
 
         # depth-data
         distance_indoor_path = os.path.abspath(os.path.join(current_path, '..', 'data', 'distancedata_32bit', 'indoor'))
         distance_outdoor_path = os.path.abspath(os.path.join(current_path, '..', 'data', 'distancedata_32bit', 'outdoor'))
-
-        # get all filenames in the directory
-        distance_indoor_files = [f for f in os.listdir(distance_indoor_path) if os.path.isfile(os.path.join(distance_indoor_path, f))]
-        distance_outdoor_files = [f for f in os.listdir(distance_outdoor_path) if os.path.isfile(os.path.join(distance_outdoor_path, f))]
-
-        depth_files = np.concatenate((distance_indoor_files, distance_outdoor_files))
 
         # instantiate the dataset
         ds = CNNDatasetDiopters(data, distance_indoor_path, distance_outdoor_path)
@@ -142,7 +142,6 @@ class DataCNNDiopters:
         # auf 30 subjects ods cross validation -> test auf den 11 mit den parametern
         train_percentage = 0.5
         val_percentage = 0.25
-        test_percentage = 0.25
 
         subjs = range(3, 44)
 

@@ -43,7 +43,7 @@ class EvaluateModel():
         return mse, rmse, mae, me, r2, mse_diopters, rmse_diopters, mae_diopters, me_diopters, percent_below_01, percent_below_01_original_metric, percent_below_01_m
 
 
-    def evaluate_model(model_trainer, dataloader):
+    def test_model(model_trainer, dataloader):
         """
         Evaluate the model on the test set, compute basic metrics and return the predictions.
 
@@ -104,7 +104,7 @@ class EvaluateModel():
             y_pred_np = utils.denormalize_depth(y_pred_np)
             y_test_np = utils.denormalize_depth(y_test_np)
 
-        elif model_trainer.model_type == 'cnnclassifierdiopters':
+        elif model_trainer.model_type == 'cnnclassifierdiopters' or model_trainer.model_type == 'cnnetdiopters' or model_trainer.model_type == 'cnnetconvdiopters' or model_trainer.model_type == 'cnndiopters':
             max_diopters = 1 / 0.1 
 
             # denormalize targets and predictions

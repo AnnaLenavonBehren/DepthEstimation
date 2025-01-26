@@ -4,11 +4,11 @@ from architectures.mlp import MLP
 from architectures.cnn import CNN, TinyCNN, SmallCNN, LargeCNN, CNNClassifier, LargeCNNClassifier, CNNClassifierDiopters
 from architectures.cnnet import CNNET, CNNETConv
 from torch.utils.tensorboard import SummaryWriter
-
+import numpy as np
 import time
 
 class Trainer:
-    def __init__(self, model_type, batch_size=32, loss_fn=nn.MSELoss(), patience=10, activation=nn.ReLU()):
+    def __init__(self, model_type, train_loader, val_loader, filename='model.pt', epsilon=10**-5, activation=nn.ReLU()):
         """
         Initializes the Trainer object.
 
@@ -27,28 +27,14 @@ class Trainer:
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_type = model_type
+        self.epsilon = epsilon
 
-        if model_type == 'mlp':
-            print('Trainer initialized with MLP model.')
-            self.model = MLP().to(self.device)
-        elif model_type == 'cnn':
+        if model_type == 'cnn':
             print('Trainer initialized with CNN model.')
             self.model = CNN().to(self.device)
-        elif model_type == 'tinycnn':
-            print('Trainer initialized with Tiny CNN model.')
-            self.model = TinyCNN().to(self.device)
-        elif model_type == 'smallcnn':
-            print('Trainer initialized with Small CNN model.')
-            self.model = SmallCNN().to(self.device)
-        elif model_type == 'largecnn':
-            print('Trainer initialized with CNN model.')
-            self.model = LargeCNN().to(self.device)
         elif model_type == 'cnnclassifier':
             print('Trainer initialized with CNN Classifier model.')
             self.model = CNNClassifier().to(self.device)
-        elif model_type == 'largecnnclassifier':
-            print('Trainer initialized with Large CNN Classifier model.')
-            self.model = LargeCNNClassifier().to(self.device)
         elif model_type == 'cnnclassifierdiopters':
             print('Trainer initialized with CNN Classifier Diopters model.')
             self.model = CNNClassifierDiopters().to(self.device)
@@ -58,21 +44,29 @@ class Trainer:
         elif model_type == 'cnnetconv':
             print('Trainer initialized with CNNETConv model.')
             self.model = CNNETConv(activation).to(self.device)
+        elif model_type == 'cnndiopters':
+            print('Trainer initialized with CNN Diopters model.')
+            self.model = CNN().to(self.device)
+        elif model_type == 'cnnetdiopters':
+            print('Trainer initialized with CNNET Diopters model.')
+            self.model = CNNET(activation).to(self.device)
+        elif model_type == 'cnnetconvdiopters':
+            print('Trainer initialized with CNNETConv Diopters model.')
+            self.model = CNNETConv(activation).to(self.device)
         else:
             raise ValueError('Model type not supported. Use MLP or CNN.')
-        
 
-        # adjust model parameters here
-        #self.model = MLP().to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        self.train_loader = train_loader
+        self.val_loader = val_loader
 
-        self.loss_fn = loss_fn
-        self.patience = patience
-        self.batch_size = batch_size
+        self.filename = filename
+        self.best_model_state_global = None
+        self.best_val_loss_global = float('inf')
 
         print('Model initialized.')
 
-    def train(self, train_loader, val_loader, n_epochs=100, filename='model.pt'):
+
+    def train(self, lr=0.001, nr_epochs=100, batch_size=32, patience=10, tensorboard=False):
         """
         Trains the model.
 
@@ -92,40 +86,45 @@ class Trainer:
         vlosses: list
             The validation losses.
         """
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.loss_fn = nn.MSELoss()
         
-        # get only the model name from the filename
-        model_name = filename.split('.')[0]
-        writer = SummaryWriter('runs/' + self.model_type + '/' + model_name)
-
-        hparams = {
-            'model_type': self.model_type,
-            'batch_size': self.batch_size,
-            'loss_fn': str(self.loss_fn),
-            'patience': self.patience,
-            'optimizer': str(self.optimizer),
-            'learning_rate': self.optimizer.param_groups[0]['lr'],
-            'nr_parameters': sum(p.numel() for p in self.model.parameters())
-        }
-        
-        metrics = {}
-
-        writer.add_hparams(hparams, metrics)
-
-
-        best_val_loss = float('inf')
         best_model_state = None
+        best_val_loss = float('inf')
+
+        if tensorboard:        
+            # get only the model name from the filename
+            model_name = self.filename.split('.')[0]
+            writer = SummaryWriter('runs/' + self.model_type + '/' + model_name)
+
+            hparams = {
+                'model_type': self.model_type,
+                'batch_size': self.batch_size,
+                'loss_fn': str(self.loss_fn),
+                'patience': self.patience,
+                'optimizer': str(self.optimizer),
+                'learning_rate': self.optimizer.param_groups[0]['lr'],
+                'nr_parameters': sum(p.numel() for p in self.model.parameters())
+            }
+        
+            metrics = {}
+
+            writer.add_hparams(hparams, metrics)
+
         epochs_no_improve = 0
         losses = []
         vlosses = []
-        num_batches = len(train_loader)
+        num_batches = len(self.train_loader)
 
         print('Training model with loss function:', self.loss_fn, 'and optimizer:', self.optimizer)
 
-        for epoch in range(n_epochs):
+        for epoch in range(nr_epochs):
             self.model.train()
             times = []
             running_loss = 0.0
-            for idx, (X_batch, y_batch) in enumerate(train_loader):
+
+            for idx, (X_batch, y_batch) in enumerate(self.train_loader):
                 print(f'Epoch {epoch+1}, Batch {idx+1}/{num_batches}', end='\r')
                 # send to device
                 X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
@@ -142,19 +141,21 @@ class Trainer:
                 self.optimizer.step()
 
                 running_loss += loss.item()
-            # output average time for one forward pass
-            print('Average time for forward pass:', sum(times) / len(times) / self.batch_size)
 
-            avg_loss = running_loss / len(train_loader)
+            # output average time for one forward pass
+            print('Average time for forward pass:', sum(times) / len(times) / batch_size)
+
+            avg_loss = running_loss / len(self.train_loader)
             losses.append(avg_loss)
-            writer.add_scalar("Loss/train", avg_loss, epoch)
-            #print(f'Epoch {epoch+1}, Training loss: {avg_loss}')
+
+            if tensorboard: 
+                writer.add_scalar("Loss/train", avg_loss, epoch)
             
             self.model.eval()
             running_vloss = 0.0
 
             with torch.no_grad():
-                for data, target in val_loader:
+                for data, target in self.val_loader:
                     data, target = data.to(self.device), target.to(self.device)
 
                     outputs = self.model(data)
@@ -162,33 +163,41 @@ class Trainer:
                     running_vloss += loss.item()
 
             
-            avg_vloss = running_vloss / len(val_loader)
-            writer.add_scalar("Loss/validation", avg_vloss, epoch)
+            avg_vloss = running_vloss / len(self.val_loader)
+
+            if tensorboard: 
+                writer.add_scalar("Loss/validation", avg_vloss, epoch)
+                
             vlosses.append(avg_vloss)
 
             print(f'Epoch {epoch+1}, Training loss: {avg_loss}, Validation loss: {avg_vloss}')
 
             # Check if the validation loss improved
-            if avg_vloss < best_val_loss:
+            if best_val_loss - avg_vloss < self.epsilon:
+                print(f'Validation loss did not improve. Best was {best_val_loss:.4f}')
+                epochs_no_improve += 1
+            else:
                 print(f'Validation loss improved from {best_val_loss:.4f} to {avg_vloss:.4f}')
                 best_val_loss = avg_vloss
                 best_model_state = self.model.state_dict()  # Save best model state
                 epochs_no_improve = 0  # Reset early stopping counter
-            else:
-                print(f'Validation loss did not improve. Best was {best_val_loss:.4f}')
-                epochs_no_improve += 1
-
-            #print('Epoch:', epoch, 'Training loss:', running_loss, 'Validation loss:', loss.item())
 
             # Early stopping based on patience
-            if epochs_no_improve >= self.patience:
+            if epochs_no_improve >= patience:
                 print("Early stopping triggered. Restoring best model.")
-                self.model.load_state_dict(best_model_state)
                 break
 
-        self.model.load_state_dict(best_model_state)
-        writer.flush()
-        writer.close()
+
+        if best_val_loss < self.best_val_loss_global:
+            self.best_val_loss_global = best_val_loss
+            self.best_model_state_global = best_model_state
+
+
+        self.model.load_state_dict(self.best_model_state_global)
+
+        if tensorboard: 
+            writer.flush()
+            writer.close()
 
         return losses, vlosses, best_val_loss
     
@@ -209,6 +218,36 @@ class Trainer:
         X = X.to(self.device)
         y_pred = self.model.predict(X)
         return y_pred
+
+    def lr_optimization(self, lrs=[10**-1, 10*-2, 10**-3, 10**-4, 10**-5, 10**-6], nr_epochs=100, batch_size=32, patience=10):
+
+        losses_lrs = []
+        vlosses_lrs = []
+        best_val_losses = []
+        self.n_epochs = nr_epochs
+        self.batch_size = batch_size
+        self.patience = patience
+
+        for lr in lrs:
+            self.model = self.model.__class__().to(self.device)
+            # initialize model with new weights
+
+            losses, vlosses, best_val_loss = self.train(lr=lr, nr_epochs=nr_epochs, batch_size=batch_size, patience=patience)
+            losses_lrs.append([losses])
+            vlosses_lrs.append([vlosses])
+            best_val_losses.append(best_val_loss)
+
+        # choose the best learning rate
+        best_lr = lrs[np.argmin(best_val_losses)]
+        best_losses = losses_lrs[np.argmin(best_val_losses)]
+        best_vlosses = vlosses_lrs[np.argmin(best_val_losses)]
+        best_val_loss = best_val_losses[np.argmin(best_val_losses)]
+
+        return best_losses, best_vlosses, best_val_loss, best_lr
+
+
+    def init_filenames(self, filename):
+        self.filename = filename
 
     
     def save_model(self, path):

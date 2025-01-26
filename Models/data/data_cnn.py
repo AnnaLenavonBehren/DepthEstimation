@@ -16,6 +16,8 @@ class ETData(Enum):
     ECCENTRICITY = 1
     VERGENCE = 2
     DEPTH = 3
+    ET = 4
+    IPD = 5
 
 
 class CNNDataset(Dataset):
@@ -43,6 +45,10 @@ class CNNDataset(Dataset):
             depth = np.random.permutation(self.et_data[['scene_id', 'participant_id', 'frame_number']].to_numpy())
             self.et_data[['scene_id', 'participant_id', 'frame_number']] = depth
             print('Depth maps permuted.')
+        elif permutation == ETData.ET:
+            print('Nothing permuted.')
+        elif permutation == ETData.IPD:
+            print('Nothing permuted.')
         
 
     def __len__(self):
@@ -124,7 +130,7 @@ class DataCNN:
     def init_dataset(self, test_only_one_subj, subj_id, permutation, seed):
         current_path = os.getcwd()
 
-        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_cnn_rollingmedian.feather')) #'et_data_cnn.feather')) 'et_data_time_avg_10percent.feather'
+        path = os.path.abspath(os.path.join(current_path, '..', 'data', 'et_data_artificial.feather')) #'et_data_cnn_rollingmedian.feather')) #'et_data_cnn.feather')) 'et_data_time_avg_10percent.feather'
         data = pd.read_feather(path)
 
         # depth-data
